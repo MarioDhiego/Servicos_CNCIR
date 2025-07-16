@@ -291,7 +291,8 @@ dados_filtrados <- reactive({
                               text = paste("Serviço:", Servico, "<br>Total:", format(Total, big.mark = ".")))) +
       geom_col(fill = "royalblue") +
       geom_text(aes(label = paste0(format(Total, big.mark = "."), "\n(", round(Percentual, 1), "%)")),
-                hjust = -0.1, color = "black", size = 4) +
+                position = position_stack(vjust = 0.5),
+                color = "white", size = 4) +
       coord_flip() +
       scale_y_continuous(labels = label_comma(big.mark = ".", decimal.mark = ",")) +
       labs(
@@ -309,25 +310,33 @@ dados_filtrados <- reactive({
   
 #=========================================================================================================================#
   output$grafico_tipo_cnh_filtros <- renderPlotly({
+  
     df_tipo <- dados_filtrados() %>%
       filter(!is.na(Tipo_CNH)) %>%
       group_by(Tipo_CNH) %>%
       summarise(Total = sum(Total, na.rm = TRUE), .groups = "drop") %>%
+      mutate(Percentual = Total / sum(Total) * 100) %>%
       arrange(Total)
+    
     p5 <- ggplot(df_tipo, aes(x = reorder(Tipo_CNH, Total), y = Total,
-                              text = paste("Tipo CNH:", Tipo_CNH, "<br>Total:", format(Total, big.mark = ".")))) +
+                              text = paste("Tipo CNH:", Tipo_CNH, 
+                                           "<br>Total:", format(Total, big.mark = "."), 
+                                           "<br>Percentual:", round(Percentual, 1), "%"))) +
       geom_col(fill = "tomato") +
-      geom_text(aes(label = format(Total, big.mark = ".")), hjust = -0.1, color = "black", size = 4) +
+      geom_text(aes(label = paste0(format(Total, big.mark = "."), "\n(", round(Percentual, 1), "%)")),
+                position = position_stack(vjust = 0.5),
+                color = "white", size = 4) +
       #coord_flip() +
       labs(
         x = "",
         y = "Total de Registros",
         title = paste("Distribuição por Tipo de CNH -",
-                      if (input$filtro_municipio != "TODOS") input$filtro_municipio else "Município",
-                      "|", if (input$filtro_mes != "TODOS") input$filtro_mes else "Mes",
-                      "|", if (input$filtro_ano != "TODOS") input$filtro_ano else "Ano")
+                      if (input$filtro_municipio != "TODOS") input$filtro_municipio else "Todos os Municípios",
+                      "|", if (input$filtro_mes != "TODOS") input$filtro_mes else "Todos os Meses",
+                      "|", if (input$filtro_ano != "TODOS") input$filtro_ano else "Todos os Anos")
       ) +
       theme_minimal()
+    
     ggplotly(p5, tooltip = "text")
     
   })
