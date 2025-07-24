@@ -17,9 +17,12 @@ library(plotly)
 library(scales)
 library(DT)
 library(leaflet)
+library(geobr)
+library(sf)
 library(classInt)
 library(BAMMtools)
 library(htmlwidgets)
+library(RColorBrewer)
 
 #=========================================================================================================================#
 # Configurações Globais
@@ -50,8 +53,15 @@ ui <- dashboardPage(
     sidebarMenu(
       menuItem("PAINEL GERAL", tabName = "geral", icon = icon("chart-bar")),
       menuItem("TABELA GERAL", tabName = "tabgeral", icon = icon("table")),
-      menuItem("PAINEL DE FILTROS", tabName = "filtros", icon = icon("filter"))
+      menuItem("PAINEL DE FILTROS", tabName = "filtros", icon = icon("filter")),
+      # NOVA ABA DO MAPA ABAIXO
+      menuItem("MAPA DE SERVIÇOS", tabName = "mapa", icon = icon("map-marked-alt"))
+      
     )
+    
+    
+    
+    
   ),
   dashboardBody(
     tabItems(
@@ -66,6 +76,21 @@ ui <- dashboardPage(
                 box(title = "TABELA DE REGISTROS POR MUNICÍPIO X MÊS", width = 5, DTOutput("tabela_mensal_geral")),
                 box(title = "TIPIFICAÇÃO DA CNH", width = 7, plotlyOutput("grafico_tipo_cnh_geral", height = "500px")),
                 box(title = "TABELA DE TIPO CNH", width = 5, DTOutput("tabela_tipo_cnh_geral"))
+              )
+      ),
+      
+      tabItem(tabName = "mapa",
+              fluidRow(
+                box(width = 12, status = "primary", solidHeader = TRUE,
+                    title = "Mapa de Distribuição de Serviços por Município",
+                    # Filtro para escolher o serviço a ser exibido no mapa
+                    selectInput("filtro_servico_mapa", "Selecione o Serviço para Visualizar:",
+                                choices = c("Renovação", "1ª CNH", "Mudança de Categoria",
+                                            "Reabilitação", "2ª Via CNH", "CNH Definitiva", "Total Geral"),
+                                selected = "Total Geral"),
+                    # Onde o mapa Leaflet será renderizado
+                    leafletOutput("mapa_servicos", height = "600px")
+                )
               )
       ),
       #=========================================================================================================================#
@@ -385,6 +410,126 @@ server <- function(input, output, session) {
       theme_minimal()
     ggplotly(p5, tooltip = "text")
   })
+  
+  
+  
+  # Adicione este bloco de código completo dentro da sua função server
+  
+  #=========================================================================================================================#
+  # LÓGICA PARA O MAPA DE SERVIÇOS
+  #=========================================================================================================================#
+  output$mapa_servicos <- renderLeaflet({
+    
+    # 1. Carregar os dados geoespaciais (polígonos) dos municípios do Pará
+    # Usamos o pacote 'geobr'. Isso pode demorar um pouco na primeira vez.
+    mapa_para <- read_municipality(code_muni = "PA", year = 2020)
+    
+    # 2. Preparar seus dados de serviços, agregando por município
+    # (Similar à lógica da tabela geral)
+    dados_agregados_mapa <- dados %>%
+      group_by(Municipio) %>%
+      summarise(
+        `Renovação` = sum(Renovacao, na.rm = TRUE),
+        `1ª CNH` = sum(`1_CNH`, na.rm = TRUE),
+        `Mudança de Categoria` = sum(Mudanca_Categoria, na.rm = TRUE),
+        `Reabilitação` = sum(Reabilitacao, na.rm = TRUE),
+        `2ª Via CNH` = sum(`2Via_CNH`, na.rm = TRUE),
+        `CNH Definitiva` = sum(CNH_Definitiva, na.rm = TRUE),
+        `Total Geral` = sum(Total, na.rm = TRUE), # Usando a coluna Total que já existe
+        .groups = "drop"
+      )
+    
+    # 3. Juntar os dados geoespaciais com seus dados de serviços
+    # Para a junção funcionar bem, vamos normalizar os nomes dos municípios
+    # (colocar em maiúsculas e sem acentos) em ambos os dataframes.
+    remover_acentos <- function(texto) {
+      iconv(texto, to = "ASCII//TRANSLIT")
+    }
+    
+    mapa_para_join <- mapa_para %>%
+      mutate(Municipio_join = toupper(remover_acentos(name_muni)))
+    
+    dados_agregados_join <- dados_agregados_mapa %>%
+      mutate(Municipio_join = toupper(remover_acentos(Municipio)))
+    
+    # Juntamos os polígonos com os dados numéricos
+    dados_mapa_final <- mapa_para_join %>%
+      left_join(dados_agregados_join, by = "Municipio_join")
+    
+    # 4. Criar o mapa com Leaflet
+    
+    # Selecionar a coluna de dados com base na escolha do usuário no filtro
+    servico_selecionado <- input$filtro_servico_mapa
+    dados_mapa_final$valor_selecionado <- dados_mapa_final[[servico_selecionado]]
+    
+    # Lidar com valores NA (municípios sem dados)
+    dados_mapa_final$valor_selecionado[is.na(dados_mapa_final$valor_selecionado)] <- 0
+    
+    # Criar uma paleta de cores: quanto maior o valor, mais escura a cor
+    # Criar uma paleta de cores: quanto maior o valor, mais escura a cor
+    paleta_cores <- colorNumeric(
+      palette = "Blues", # Paleta em degradê de Azul
+      domain = dados_mapa_final$valor_selecionado
+    )
+    
+    # Criar os rótulos que aparecerão ao passar o mouse
+    rotulos_popup <- sprintf(
+      "<strong>%s</strong><br/>%s: %s",
+      dados_mapa_final$name_muni, # Nome original com acentos
+      servico_selecionado,
+      formatar_numero(dados_mapa_final$valor_selecionado) # Usando sua função
+    ) %>% lapply(htmltools::HTML)
+    
+    # Construir o mapa
+    leaflet(data = dados_mapa_final) %>%
+      addProviderTiles(providers$CartoDB.Positron, group = "Mapa Padrão") %>%
+      addPolygons(
+        fillColor = ~paleta_cores(valor_selecionado), # Cor de preenchimento dinâmica
+        weight = 1, # Espessura da borda
+        opacity = 1,
+        color = "white", # Cor da borda
+        dashArray = "3",
+        fillOpacity = 0.7,
+        highlightOptions = highlightOptions( # Efeito ao passar o mouse
+          weight = 3,
+          color = "#666",
+          dashArray = "",
+          fillOpacity = 0.7,
+          bringToFront = TRUE
+        ),
+        label = rotulos_popup, # Rótulos que criamos
+        labelOptions = labelOptions(
+          style = list("font-weight" = "normal", padding = "3px 8px"),
+          textsize = "15px",
+          direction = "auto"
+        )
+      ) %>%
+      addLegend( # Adicionar a legenda de cores
+        pal = paleta_cores,
+        values = ~valor_selecionado,
+        opacity = 0.7,
+        title = servico_selecionado,
+        position = "bottomright"
+      )
+  })
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
 }
 
 #=========================================================================================================================#
