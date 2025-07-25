@@ -47,7 +47,6 @@ meses_ordenados <- c("Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
 ui <- dashboardPage(
   dashboardHeader(title = "CIRETRAN'S", titleWidth = 230),
   dashboardSidebar(
-    # SUGESTÃO: Removido o CSS não utilizado para #setor
     tags$img(src = "detran1.jpeg", width = 230, height = 180),
     useShinyjs(),
     sidebarMenu(
@@ -58,13 +57,44 @@ ui <- dashboardPage(
     )
   ),
   dashboardBody(
+    tags$head(
+      #========================================================================#
+      # -------------  SCRIPT PARA CORRIGIR O REDIMENSIONAMENTO ---------------#
+      #========================================================================#
+      tags$script(HTML("
+          // Este código 'escuta' por um clique em qualquer botão de maximizar
+          $(document).on('click', '[data-card-widget=\"maximize\"]', function(){
+            // Ele espera um curto período (350ms) para a animação da caixa terminar
+            setTimeout(function() {
+              // E então dispara um evento de 'resize' na janela.
+              // Todos os gráficos (echarts4r, leaflet) escutam por este evento
+              // e se redimensionam para caber no novo espaço.
+              $(window).trigger('resize');
+            }, 350);
+          });
+        ")),
+      #========================================================================#
+      # Código CSS para aumentar a imagem
+      tags$style(HTML("
+  /* Ajusta a altura de TODO o container da marca */
+  .brand-link {
+    height: 60px !important; /* Aumenta a área total do logo */
+  }
+
+  /* Ajusta a imagem DENTRO do container */
+  .brand-image {
+    height: 50px !important;      /* A altura da imagem */
+    width: auto !important;       /* Largura automática para manter proporção */
+    margin-top: 5px !important;   /* Ajusta a margem superior para melhor alinhamento */
+  }
+"))
+    ),
     tabItems(
 #=========================================================================================================================#
 # ABA 1: PAINEL GERAL
       tabItem(tabName = "geral",
               fluidRow(
                 box(title = "TIPOS DE SERVIÇOS DE CNH", width = 7, plotlyOutput("grafico_total_servicos", height = "500px")),
-                # CORREÇÃO: Título da tabela ajustado para refletir seu conteúdo real.
                 box(title = "SERVIÇOS POR MUNICÍPIO X TIPO DE CNH", width = 5, DTOutput("tabela_cruzada")),
                 box(title = "REGISTROS POR MESES", width = 7, plotlyOutput("grafico_mensal_geral", height = "500px")),
                 box(title = "TABELA DE REGISTROS POR MUNICÍPIO X MÊS", width = 5, DTOutput("tabela_mensal_geral")),
@@ -72,34 +102,35 @@ ui <- dashboardPage(
                 box(title = "TABELA DE TIPO CNH", width = 5, DTOutput("tabela_tipo_cnh_geral"))
               )
       ),
-      # No ui, dentro de tabItems()
-      #=========================================================================================================================#
-      # ABA 4: MAPA (COM BOTÃO DE RESET)
+#=========================================================================================================================#
+# ABA 4: MAPA (COM BOTÃO DE RESET)
       tabItem(tabName = "mapa",
               fluidRow(
-                box(width = 12, status = "primary", solidHeader = TRUE,
-                    title = "Mapa de Distribuição de Serviços por Município",
-                    
-                    # Grelha para alinhar o filtro e o botão
+                box(width = 10, 
+                    status = "primary", 
+                    solidHeader = FALSE,
+                    maximizable = TRUE,
+                    collapsed = FALSE,
+                    headerBorder = TRUE,
+                    title = "Visão Espacial dos Serviços de CNH",
                     fluidRow(
-                      column(4, # Ocupa 4 de 12 colunas da grelha
-                             selectInput("filtro_servico_mapa", "Selecione o Serviço para Visualizar:",
+                      column(2, 
+                             selectInput("filtro_servico_mapa", "Tipo de Serviços:",
                                          choices = c("Renovação", "1ª CNH", "Mudança de Categoria",
                                                      "Reabilitação", "2ª Via CNH", "CNH Definitiva", "Total Geral"),
                                          selected = "Total Geral")
                       ),
-                      column(3, # Ocupa 3 de 12 colunas da grelha
-                             # Adiciona um espaço vertical para alinhar melhor o botão
+                      column(2, 
                              tags$div(style = "margin-top: 25px;", 
-                                      actionButton("reset_mapa", "RESETAR", icon = icon("globe-americas"))
+                                      actionButton("reset_mapa", "REINICIAR", 
+                                                   icon = icon("globe-americas"))
                              )
                       )
                     ),
-                    # Linha de separação visual
                     hr(),
-                    
-                    # Onde o mapa Leaflet será renderizado
+                    withSpinner(
                     leafletOutput("mapa_servicos", height = "600px")
+                    )
                 )
               )
       ),
@@ -115,8 +146,9 @@ ui <- dashboardPage(
                             choices = c("Total Geral", "Renovação", "1ª CNH", "Mudança de Categoria",
                                         "Reabilitação", "2ª Via CNH", "CNH Definitiva"),
                             selected = "Total Geral"),
-                # SUGESTÃO: Título alterado de "Top 10" para "Tabela Geral" para corresponder ao conteúdo.
-                box(title = "TABELA GERAL POR MUNICÍPIO", width = 12, DTOutput("tabela_top_municipios"))
+                box(title = "TABELA GERAL POR MUNICÍPIO", 
+                    width = 12, 
+                    DTOutput("tabela_top_municipios"))
               )
       ),
 #=========================================================================================================================#
@@ -154,31 +186,10 @@ ui <- dashboardPage(
 #=========================================================================================================================#
 server <- function(input, output, session) {
   
-  
-  
-  
-#=========================================================================================================================#
-# LÓGICA PARA O BOTÃO DE RESET DO MAPA
-#=========================================================================================================================#
-
   observeEvent(input$reset_mapa, {
-    # Carrega o ficheiro do mapa novamente para obter os limites
-    mapa_para <- readRDS("geopa.rds")
-    bbox <- sf::st_bbox(mapa_para)
-    
-    # Usa um "proxy" para manipular o mapa existente
-    leafletProxy("mapa_servicos", session) %>%
-      # Aplica o mesmo comando 'fitBounds' da criação do mapa para redefinir o zoom
-      fitBounds(
-        lng1 = bbox["xmin"], lat1 = bbox["ymin"],
-        lng2 = bbox["xmax"], lat2 = bbox["ymax"]
-      )
+    updateSelectInput(session, "filtro_servico_mapa", selected = "Total Geral")
   })  
-#=========================================================================================================================# 
- 
-#=========================================================================================================================#
-# Lógica de Filtros Reativos
-#=========================================================================================================================#
+
   observeEvent(input$reset_filtros, {
     updateSelectInput(session, "filtro_ano", selected = "TODOS")
     updateSelectInput(session, "filtro_mes", selected = "TODOS")
@@ -444,27 +455,20 @@ output$grafico_total_servicos_filtros <- renderPlotly({
       theme_minimal()
     ggplotly(p5, tooltip = "text")
   })
-  
-  
-  
 
-  
+#=========================================================================================================================#
 
-  
+
 #=========================================================================================================================#
 # LÓGICA PARA O MAPA DE SERVIÇOS (CARREGANDO ARQUIVO geopa.rds)
-#=========================================================================================================================#
-  output$mapa_servicos <- renderLeaflet({
-    
-    # 1. Carregar o arquivo geoespacial local que você enviou
+  
+   output$mapa_servicos <- renderLeaflet({
+     
     mapa_para <- readRDS("geopa.rds")
-    
-    # Adiciona uma verificação para garantir que o arquivo foi lido corretamente
     validate(
       need(!is.null(mapa_para), "Arquivo 'geopa.rds' não encontrado ou está corrompido. Certifique-se de que o arquivo está na mesma pasta do seu aplicativo.")
     )
     
-    # 2. Preparar seus dados de serviços (exatamente como antes)
     dados_agregados_mapa <- dados %>%
       group_by(Municipio) %>%
       summarise(
@@ -477,13 +481,9 @@ output$grafico_total_servicos_filtros <- renderPlotly({
         `Total Geral` = sum(Total, na.rm = TRUE),
         .groups = "drop"
       )
-    
-# Juntar os dados do mapa com seus dados de serviços
-# Vamos normalizar os nomes dos municípios para a junção funcionar bem
     remover_acentos <- function(texto) {
       iconv(texto, to = "ASCII//TRANSLIT")
     }
-    
     mapa_para_join <- mapa_para %>%
       mutate(Municipio_join = toupper(remover_acentos(name_muni)))
     
@@ -501,10 +501,9 @@ output$grafico_total_servicos_filtros <- renderPlotly({
   
 # Usando a paleta de cores "Blues"
     paleta_cores <- colorNumeric(
-      palette = c("#B6EDF0", "#74B4E8", "#1F83E0", "#1D44B8", "#090991"),
+      palette = c("white", "#74B4E8", "#1F83E0", "#1D44B8", "#090991"),
       domain = dados_mapa_final$valor_selecionado
     )
-    
     rotulos_popup <- sprintf(
       "<strong>%s</strong><br/>%s: %s",
       dados_mapa_final$name_muni,
@@ -512,7 +511,9 @@ output$grafico_total_servicos_filtros <- renderPlotly({
       formatar_numero(dados_mapa_final$valor_selecionado)
     ) %>% lapply(htmltools::HTML)
     
-    leaflet(data = dados_mapa_final) %>%
+    leaflet(data = dados_mapa_final,
+            options = leafletOptions(minZoom = 0, maxZoom = 15, zoomControl = TRUE),
+            width = "100%", height = "600px") %>%
       addProviderTiles(providers$Esri.NatGeoWorldMap) %>%
       addPolygons(
         fillColor = ~paleta_cores(valor_selecionado),
