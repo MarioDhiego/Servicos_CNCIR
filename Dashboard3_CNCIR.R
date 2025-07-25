@@ -1,4 +1,3 @@
-
 #=========================================================================================================================#
 # Carregar Bibliotecas
 #=========================================================================================================================#
@@ -9,7 +8,7 @@ library(shinythemes)
 library(shinycssloaders)
 library(shinyWidgets)
 library(dashboardthemes)
-library(readxl) # SUGESTÃO: Removida a duplicata da biblioteca
+library(readxl) 
 library(dplyr)
 library(tidyr)
 library(ggplot2)
@@ -23,14 +22,16 @@ library(classInt)
 library(BAMMtools)
 library(htmlwidgets)
 library(RColorBrewer)
-
-#=========================================================================================================================#
-# Configurações Globais
 #=========================================================================================================================#
 
+
+#=========================================================================================================================#
 # Carregar Base de Dados
 # Certifique-se que o arquivo "Banco_CNCIR.xlsx" está na mesma pasta do script.
 dados <- read_excel("Banco_CNCIR.xlsx")
+validate(
+  need(!is.null(dados), "Erro ao carregar 'Banco_CNCIR.xlsx'. Verifique o caminho e formato.")
+)
 
 # Função auxiliar para formatar números
 formatar_numero <- function(x) {
@@ -40,7 +41,6 @@ formatar_numero <- function(x) {
 # SUGESTÃO: Vetor para ordenar os meses cronologicamente nos filtros e gráficos
 meses_ordenados <- c("Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
                      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro")
-
 #=========================================================================================================================#
 # UI (Front End)
 #=========================================================================================================================#
@@ -54,19 +54,13 @@ ui <- dashboardPage(
       menuItem("PAINEL GERAL", tabName = "geral", icon = icon("chart-bar")),
       menuItem("TABELA GERAL", tabName = "tabgeral", icon = icon("table")),
       menuItem("PAINEL DE FILTROS", tabName = "filtros", icon = icon("filter")),
-      # NOVA ABA DO MAPA ABAIXO
       menuItem("MAPA DE SERVIÇOS", tabName = "mapa", icon = icon("map-marked-alt"))
-      
     )
-    
-    
-    
-    
   ),
   dashboardBody(
     tabItems(
-      #=========================================================================================================================#
-      # ABA 1: PAINEL GERAL
+#=========================================================================================================================#
+# ABA 1: PAINEL GERAL
       tabItem(tabName = "geral",
               fluidRow(
                 box(title = "TIPOS DE SERVIÇOS DE CNH", width = 7, plotlyOutput("grafico_total_servicos", height = "500px")),
@@ -78,23 +72,43 @@ ui <- dashboardPage(
                 box(title = "TABELA DE TIPO CNH", width = 5, DTOutput("tabela_tipo_cnh_geral"))
               )
       ),
-      
+      # No ui, dentro de tabItems()
+      #=========================================================================================================================#
+      # ABA 4: MAPA (COM BOTÃO DE RESET)
       tabItem(tabName = "mapa",
               fluidRow(
                 box(width = 12, status = "primary", solidHeader = TRUE,
                     title = "Mapa de Distribuição de Serviços por Município",
-                    # Filtro para escolher o serviço a ser exibido no mapa
-                    selectInput("filtro_servico_mapa", "Selecione o Serviço para Visualizar:",
-                                choices = c("Renovação", "1ª CNH", "Mudança de Categoria",
-                                            "Reabilitação", "2ª Via CNH", "CNH Definitiva", "Total Geral"),
-                                selected = "Total Geral"),
+                    
+                    # Grelha para alinhar o filtro e o botão
+                    fluidRow(
+                      column(4, # Ocupa 4 de 12 colunas da grelha
+                             selectInput("filtro_servico_mapa", "Selecione o Serviço para Visualizar:",
+                                         choices = c("Renovação", "1ª CNH", "Mudança de Categoria",
+                                                     "Reabilitação", "2ª Via CNH", "CNH Definitiva", "Total Geral"),
+                                         selected = "Total Geral")
+                      ),
+                      column(3, # Ocupa 3 de 12 colunas da grelha
+                             # Adiciona um espaço vertical para alinhar melhor o botão
+                             tags$div(style = "margin-top: 25px;", 
+                                      actionButton("reset_mapa", "RESETAR", icon = icon("globe-americas"))
+                             )
+                      )
+                    ),
+                    # Linha de separação visual
+                    hr(),
+                    
                     # Onde o mapa Leaflet será renderizado
                     leafletOutput("mapa_servicos", height = "600px")
                 )
               )
       ),
-      #=========================================================================================================================#
-      # Aba 2 : TABELA GERAL
+  
+      
+      
+      
+#=========================================================================================================================#
+# Aba 2 : TABELA GERAL
       tabItem(tabName = "tabgeral",
               fluidRow(
                 selectInput("filtro_servico_top", "Filtrar por Serviço:",
@@ -105,8 +119,8 @@ ui <- dashboardPage(
                 box(title = "TABELA GERAL POR MUNICÍPIO", width = 12, DTOutput("tabela_top_municipios"))
               )
       ),
-      #=========================================================================================================================#
-      # ABA 3: PAINEL DE FILTROS
+#=========================================================================================================================#
+# ABA 3: PAINEL DE FILTROS
       tabItem(tabName = "filtros",
               fluidRow(
                 box(width = 12, status = "primary", solidHeader = TRUE, title = "Filtros",
@@ -135,22 +149,43 @@ ui <- dashboardPage(
     )
   )
 )
-
 #=========================================================================================================================#
 # SERVER (Back End)
 #=========================================================================================================================#
 server <- function(input, output, session) {
   
-  #=========================================================================================================================#
-  # Lógica de Filtros Reativos
-  #=========================================================================================================================#
+  
+  
+  
+#=========================================================================================================================#
+# LÓGICA PARA O BOTÃO DE RESET DO MAPA
+#=========================================================================================================================#
+
+  observeEvent(input$reset_mapa, {
+    # Carrega o ficheiro do mapa novamente para obter os limites
+    mapa_para <- readRDS("geopa.rds")
+    bbox <- sf::st_bbox(mapa_para)
+    
+    # Usa um "proxy" para manipular o mapa existente
+    leafletProxy("mapa_servicos", session) %>%
+      # Aplica o mesmo comando 'fitBounds' da criação do mapa para redefinir o zoom
+      fitBounds(
+        lng1 = bbox["xmin"], lat1 = bbox["ymin"],
+        lng2 = bbox["xmax"], lat2 = bbox["ymax"]
+      )
+  })  
+#=========================================================================================================================# 
+ 
+#=========================================================================================================================#
+# Lógica de Filtros Reativos
+#=========================================================================================================================#
   observeEvent(input$reset_filtros, {
     updateSelectInput(session, "filtro_ano", selected = "TODOS")
     updateSelectInput(session, "filtro_mes", selected = "TODOS")
     updateSelectInput(session, "filtro_municipio", selected = "TODOS")
   })
   
-  dados_filtrados <- reactive({
+dados_filtrados <- reactive({
     dados %>%
       filter(
         if (input$filtro_ano == "TODOS") TRUE else Ano == input$filtro_ano,
@@ -159,9 +194,8 @@ server <- function(input, output, session) {
       )
   })
   
-  #============================= ABA 1: GERAL ==============================================================================#
-  
-  # Gráfico por Serviços
+#============================= ABA 1: GERAL ==============================================================================#
+#-Gráfico por Serviços
   output$grafico_total_servicos <- renderPlotly({
     df_total <- dados %>%
       select(Renovacao, Mudanca_Categoria, `1_CNH`, Reabilitacao, `2Via_CNH`, CNH_Definitiva) %>%
@@ -190,7 +224,7 @@ server <- function(input, output, session) {
     ggplotly(p1, tooltip = "text")
   })
   
-  # Tabela Município x Tipo_CNH
+#-Tabela Município x Tipo_CNH
   output$tabela_cruzada <- renderDT({
     dados %>%
       mutate(across(c(Renovacao, Mudanca_Categoria, `1_CNH`, Reabilitacao, `2Via_CNH`, CNH_Definitiva), ~replace_na(., 0))) %>%
@@ -207,7 +241,7 @@ server <- function(input, output, session) {
       )
   })
   
-  # Gráfico por Meses
+#-Gráfico por Meses
   output$grafico_mensal_geral <- renderPlotly({
     df_mes <- dados %>%
       filter(Mes %in% meses_ordenados) %>%
@@ -235,7 +269,7 @@ server <- function(input, output, session) {
     ggplotly(p2, tooltip = "text")
   })
   
-  # Tabela Município x Meses
+#-Tabela Município x Meses
   output$tabela_mensal_geral <- renderDT({
     dados %>%
       filter(Mes %in% meses_ordenados) %>%
@@ -250,7 +284,7 @@ server <- function(input, output, session) {
       )
   })
   
-  #Gráfico CNH
+#-Gráfico CNH
   output$grafico_tipo_cnh_geral <- renderPlotly({
     df <- dados %>%
       filter(!is.na(Tipo_CNH)) %>%
@@ -270,7 +304,7 @@ server <- function(input, output, session) {
     ggplotly(p3, tooltip = "text")
   })
   
-  # Tabela Município x CNH
+#-Tabela Município x CNH
   output$tabela_tipo_cnh_geral <- renderDT({
     df <- dados %>%
       filter(!is.na(Tipo_CNH), !is.na(Municipio)) %>%
@@ -291,10 +325,9 @@ server <- function(input, output, session) {
       options = list(pageLength = 10, autoWidth = TRUE)
     )
   })
+#====================== ABA 2: TABELA GERAL ==============================================================================#
   
-  #====================== ABA 2: TABELA GERAL ==============================================================================#
-
-  output$tabela_top_municipios <- renderDT({
+output$tabela_top_municipios <- renderDT({
     # Este vetor precisa corresponder aos nomes das colunas no arquivo Excel original ("dados")
     colunas_servicos <- c("Renovacao", "1_CNH", "Mudanca_Categoria", "Reabilitacao", "2Via_CNH", "CNH_Definitiva")
     
@@ -324,7 +357,8 @@ server <- function(input, output, session) {
     } else {
       df_final <- df %>%
         rename(`Total Geral` = Total) %>%
-        # Agora 'all_of(servico_escolhido)' vai funcionar pois o nome existe.
+
+#-Agora 'all_of(servico_escolhido)' vai funcionar pois o nome existe.
         select(Municipio, all_of(servico_escolhido), `Total Geral`) %>%
         arrange(desc(.data[[servico_escolhido]]))
       
@@ -356,9 +390,9 @@ server <- function(input, output, session) {
     )
   })
   
-  #====================== ABA 3: FILTROS =================================================================================#
+#====================== ABA 3: FILTROS =================================================================================#
   
-  output$grafico_total_servicos_filtros <- renderPlotly({
+output$grafico_total_servicos_filtros <- renderPlotly({
     df_total <- dados_filtrados() %>%
       select(Renovacao, Mudanca_Categoria, `1_CNH`, Reabilitacao, `2Via_CNH`, CNH_Definitiva) %>%
       summarise(across(everything(), sum, na.rm = TRUE)) %>%
@@ -377,7 +411,7 @@ server <- function(input, output, session) {
     
     p4 <- ggplot(df_total, aes(x = reorder(Servico, Total), y = Total,
                                text = paste("Serviço:", Servico, "<br>Total:", formatar_numero(Total)))) +
-      geom_col(fill = "royalblue") +
+      geom_col(fill = "blue") +
       geom_text(aes(label = paste0(formatar_numero(Total), "\n(", round(Percentual, 1), "%)")),
                 position = position_stack(vjust = 0.5),
                 color = "white", size = 4) +
@@ -400,7 +434,7 @@ server <- function(input, output, session) {
                               text = paste("Tipo CNH:", Tipo_CNH,
                                            "<br>Total:", formatar_numero(Total),
                                            "<br>Percentual:", round(Percentual, 1), "%"))) +
-      geom_col(fill = "tomato") +
+      geom_col(fill = "red") +
       geom_text(aes(label = paste0(formatar_numero(Total), "\n(", round(Percentual, 1), "%)")),
                 position = position_stack(vjust = 0.5),
                 color = "white", size = 4) +
@@ -413,19 +447,24 @@ server <- function(input, output, session) {
   
   
   
-  # Adicione este bloco de código completo dentro da sua função server
+
   
-  #=========================================================================================================================#
-  # LÓGICA PARA O MAPA DE SERVIÇOS
-  #=========================================================================================================================#
+
+  
+#=========================================================================================================================#
+# LÓGICA PARA O MAPA DE SERVIÇOS (CARREGANDO ARQUIVO geopa.rds)
+#=========================================================================================================================#
   output$mapa_servicos <- renderLeaflet({
     
-    # 1. Carregar os dados geoespaciais (polígonos) dos municípios do Pará
-    # Usamos o pacote 'geobr'. Isso pode demorar um pouco na primeira vez.
-    mapa_para <- read_municipality(code_muni = "PA", year = 2020)
+    # 1. Carregar o arquivo geoespacial local que você enviou
+    mapa_para <- readRDS("geopa.rds")
     
-    # 2. Preparar seus dados de serviços, agregando por município
-    # (Similar à lógica da tabela geral)
+    # Adiciona uma verificação para garantir que o arquivo foi lido corretamente
+    validate(
+      need(!is.null(mapa_para), "Arquivo 'geopa.rds' não encontrado ou está corrompido. Certifique-se de que o arquivo está na mesma pasta do seu aplicativo.")
+    )
+    
+    # 2. Preparar seus dados de serviços (exatamente como antes)
     dados_agregados_mapa <- dados %>%
       group_by(Municipio) %>%
       summarise(
@@ -435,13 +474,12 @@ server <- function(input, output, session) {
         `Reabilitação` = sum(Reabilitacao, na.rm = TRUE),
         `2ª Via CNH` = sum(`2Via_CNH`, na.rm = TRUE),
         `CNH Definitiva` = sum(CNH_Definitiva, na.rm = TRUE),
-        `Total Geral` = sum(Total, na.rm = TRUE), # Usando a coluna Total que já existe
+        `Total Geral` = sum(Total, na.rm = TRUE),
         .groups = "drop"
       )
     
-    # 3. Juntar os dados geoespaciais com seus dados de serviços
-    # Para a junção funcionar bem, vamos normalizar os nomes dos municípios
-    # (colocar em maiúsculas e sem acentos) em ambos os dataframes.
+# Juntar os dados do mapa com seus dados de serviços
+# Vamos normalizar os nomes dos municípios para a junção funcionar bem
     remover_acentos <- function(texto) {
       iconv(texto, to = "ASCII//TRANSLIT")
     }
@@ -452,59 +490,52 @@ server <- function(input, output, session) {
     dados_agregados_join <- dados_agregados_mapa %>%
       mutate(Municipio_join = toupper(remover_acentos(Municipio)))
     
-    # Juntamos os polígonos com os dados numéricos
     dados_mapa_final <- mapa_para_join %>%
       left_join(dados_agregados_join, by = "Municipio_join")
     
-    # 4. Criar o mapa com Leaflet
-    
-    # Selecionar a coluna de dados com base na escolha do usuário no filtro
+# 4. Criar o mapa com Leaflet 
     servico_selecionado <- input$filtro_servico_mapa
     dados_mapa_final$valor_selecionado <- dados_mapa_final[[servico_selecionado]]
-    
-    # Lidar com valores NA (municípios sem dados)
     dados_mapa_final$valor_selecionado[is.na(dados_mapa_final$valor_selecionado)] <- 0
     
-    # Criar uma paleta de cores: quanto maior o valor, mais escura a cor
-    # Criar uma paleta de cores: quanto maior o valor, mais escura a cor
+  
+# Usando a paleta de cores "Blues"
     paleta_cores <- colorNumeric(
-      palette = "Blues", # Paleta em degradê de Azul
+      palette = c("#B6EDF0", "#74B4E8", "#1F83E0", "#1D44B8", "#090991"),
       domain = dados_mapa_final$valor_selecionado
     )
     
-    # Criar os rótulos que aparecerão ao passar o mouse
     rotulos_popup <- sprintf(
       "<strong>%s</strong><br/>%s: %s",
-      dados_mapa_final$name_muni, # Nome original com acentos
+      dados_mapa_final$name_muni,
       servico_selecionado,
-      formatar_numero(dados_mapa_final$valor_selecionado) # Usando sua função
+      formatar_numero(dados_mapa_final$valor_selecionado)
     ) %>% lapply(htmltools::HTML)
     
-    # Construir o mapa
     leaflet(data = dados_mapa_final) %>%
-      addProviderTiles(providers$CartoDB.Positron, group = "Mapa Padrão") %>%
+      addProviderTiles(providers$Esri.NatGeoWorldMap) %>%
       addPolygons(
-        fillColor = ~paleta_cores(valor_selecionado), # Cor de preenchimento dinâmica
-        weight = 1, # Espessura da borda
+        fillColor = ~paleta_cores(valor_selecionado),
+        weight = 1,
         opacity = 1,
-        color = "white", # Cor da borda
+        color = "white",
         dashArray = "3",
         fillOpacity = 0.7,
-        highlightOptions = highlightOptions( # Efeito ao passar o mouse
+        highlightOptions = highlightOptions(
           weight = 3,
           color = "#666",
           dashArray = "",
           fillOpacity = 0.7,
           bringToFront = TRUE
         ),
-        label = rotulos_popup, # Rótulos que criamos
+        label = rotulos_popup,
         labelOptions = labelOptions(
           style = list("font-weight" = "normal", padding = "3px 8px"),
           textsize = "15px",
           direction = "auto"
         )
       ) %>%
-      addLegend( # Adicionar a legenda de cores
+      addLegend(
         pal = paleta_cores,
         values = ~valor_selecionado,
         opacity = 0.7,
@@ -512,23 +543,9 @@ server <- function(input, output, session) {
         position = "bottomright"
       )
   })
+#=========================================================================================================================#  
   
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
+
   
 }
 
